@@ -8,91 +8,88 @@ jobs:
   deploy-and-test:
     runs-on: self-hosted
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Create .env file from secrets
-      env:
-        DB_USER: ${{ secrets.DB_USER }}
-        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        DB_NAME: ${{ secrets.DB_NAME }}
-      run: |
-        echo "DB_USER=$env:DB_USER" | Out-File -FilePath .env -Encoding utf8
-        echo "DB_PASSWORD=$env:DB_PASSWORD" | Out-File -FilePath .env -Encoding utf8 -Append
-        echo "DB_NAME=$env:DB_NAME" | Out-File -FilePath .env -Encoding utf8 -Append
+      - name: Create .env file from secrets
+        env:
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+        run: |
+          echo "DB_USER=$env:DB_USER" | Out-File -FilePath .env -Encoding utf8
+          echo "DB_PASSWORD=$env:DB_PASSWORD" | Out-File -FilePath .env -Encoding utf8 -Append
+          echo "DB_NAME=$env:DB_NAME" | Out-File -FilePath .env -Encoding utf8 -Append
 
-    - name: Deploy with Docker Compose
-      run: |
-        docker compose up -d --build
-        Start-Sleep -Seconds 30
-        docker compose ps
+      - name: Deploy with Docker Compose
+        run: |
+          docker compose up -d --build
+          Start-Sleep -Seconds 30
+          docker compose ps
 
-    - name: Verify containers are running
-      run: |
-        $status = docker compose ps
-        if ($status -match "Up") {
-          echo "All containers are running"
-        } else {
-          docker compose logs
-          exit 1
-        }
-
-    - name: Run application tests
-      run: |
-        $web = Invoke-WebRequest -Uri "http://localhost:8080/api/items" -UseBasicParsing
-        if ($web.StatusCode -eq 200) {
-            echo "Web application is healthy"
-        } else {
+      - name: Verify containers are running
+        run: |
+          $status = docker compose ps
+          if ($status -match "Up") {
+            echo "All containers are running"
+          } else {
+            docker compose logs
             exit 1
-        }
-        
-        $dbCount = (docker compose exec -T db psql -U app -d appdb -t -c "SELECT COUNT(*) FROM items;" | Out-String).Trim()
-        $webContent = $web.Content | ConvertFrom-Json
-        $webCount = $webContent.Count
-        
-        echo "Database count: $dbCount"
-        echo "Web API count: $webCount"
-        
-        if ($dbCount -eq $webCount) {
-            echo "Data consistency test passed"
-        } else {
-            exit 1
-        }
+          }
 
-    - name: Create test report
-      run: |
-        $report = @"
-# Deployment Test Report
-- Date: $(Get-Date)
-- Application: Healthy
-- Database: Connected
-- Data Consistency: Passed
-- Containers: Running
-"@
-        $report | Out-File -FilePath test-report.md -Encoding utf8
+      - name: Run application tests
+        run: |
+          $web = Invoke-WebRequest -Uri "http://localhost:8080/api/items" -UseBasicParsing
+          if ($web.StatusCode -eq 200) {
+              echo "Web application is healthy"
+          } else {
+              exit 1
+          }
+          
+          $dbCount = (docker compose exec -T db psql -U app -d appdb -t -c "SELECT COUNT(*) FROM items;" | Out-String).Trim()
+          $webContent = $web.Content | ConvertFrom-Json
+          $webCount = $webContent.Count
+          
+          echo "Database count: $dbCount"
+          echo "Web API count: $webCount"
+          
+          if ($dbCount -eq $webCount) {
+              echo "Data consistency test passed"
+          } else {
+              exit 1
+          }
 
-    - name: Save artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: deployment-artifacts
-        path: |
-          .env
-          test-report.md
-        retention-days: 30
+      - name: Create test report
+        run: |
+          echo "# Deployment Test Report" > test-report.md
+          echo "- Date: $(Get-Date)" >> test-report.md
+          echo "- Application: Healthy" >> test-report.md
+          echo "- Database: Connected" >> test-report.md
+          echo "- Data Consistency: Passed" >> test-report.md
+          echo "- Containers: Running" >> test-report.md
 
-    - name: Save Docker logs
-      if: always()
-      run: |
-        docker compose logs | Out-File -FilePath deployment-logs.txt -Encoding utf8
-        docker images | Out-File -FilePath docker-images.txt -Encoding utf8
-        docker ps -a | Out-File -FilePath docker-ps.txt -Encoding utf8
+      - name: Save artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-artifacts
+          path: |
+            .env
+            test-report.md
+          retention-days: 30
 
-    - name: Upload Docker logs as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: docker-logs
-        path: |
-          deployment-logs.txt
-          docker-images.txt
-          docker-ps.txt
-        retention-days: 30
+      - name: Save Docker logs
+        if: always()
+        run: |
+          docker compose logs | Out-File -FilePath deployment-logs.txt -Encoding utf8
+          docker images | Out-File -FilePath docker-images.txt -Encoding utf8
+          docker ps -a | Out-File -FilePath docker-ps.txt -Encoding utf8
+
+      - name: Upload Docker logs as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-logs
+          path: |
+            deployment-logs.txt
+            docker-images.txt
+            docker-ps.txt
+          retention-days: 30
